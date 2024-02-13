@@ -84,14 +84,17 @@ class EmailStack:
 if __name__ == '__main__':
     import time
     
-    account = 'ipsync2@outlook.com'
-    password = 'thisisawesome2'
+    account = 'xxx@outlook.com'
+    password = 'xxx'
     stack_id = 0
     
     estack = EmailStack(account, password, stack_id)
-    estack.push('Hows it going')
+    
+    current_time = time.time()
+    estack.push(f'{current_time}')
+    print(f'Sent: {current_time}')
     time.sleep(10)
     ret = estack.top()
-    print('Stack top:', ret)
+    print('Received stack top:', ret)
     
     estack.close()
