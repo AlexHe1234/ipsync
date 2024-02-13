@@ -2,6 +2,9 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+import email
+import imaplib
+
 
 # Utilize an email account as multiple 'online' stacks distinguished by stack_id
 class EmailStack:
@@ -13,17 +16,25 @@ class EmailStack:
         self.account = account
         self.password = password
         self.stack_id = stack_id
-        self.mail_url = 'smtp.' + self.account.split('@')[-1]
+        self.smtp_addr = 'smtp.' + self.account.split('@')[-1]
+        self.imap_addr = 'imap-mail.' + self.account.split('@')[-1]
         
         try:
-            self.server = smtplib.SMTP(self.mail_url)
-            self.server.starttls()
-            self.server.login(self.account, self.password)
+            self.smtp_server = smtplib.SMTP(self.smtp_addr, port=587)
+            self.smtp_server.starttls()
+            self.smtp_server.login(self.account, self.password)
         except:
-            raise RuntimeError('Email login failed')
+            raise RuntimeError('SMTP login failed')
         
-    def push(self, stack_id: int, msg: str):
-        pass
+        try:
+            self.imap_server = imaplib.IMAP4_SSL(self.imap_addr, 993)
+            self.imap_server.login(self.account, self.password)
+            self.imap_server.select('inbox')
+        except:
+            raise RuntimeError('IMAP login failed')
+        
+    def push(self, msg: str):
+        self.__send__(str(self.stack_id), msg)
 
     def __send__(self, subject: str, body: str):
         message = MIMEMultipart()
@@ -34,17 +45,53 @@ class EmailStack:
         message.attach(MIMEText(body, 'plain'))
         text = message.as_string()
         try:
-            self.server.sendmail(self.account, self.account, text)
+            self.smtp_server.sendmail(self.account, self.account, text)
         except:
-            raise RuntimeError('Email account has become unaccessible')
+            raise RuntimeError('Email account is not accessible')
 
-    def __receive__(self):
-        pass
+    # return newest mail content with certain stack_id
+    def top(self):
+        result, data = self.imap_server.search(None, 'ALL')
+        assert result == 'OK', 'IMAP search inbox failed'
+        
+        for num in reversed(data[0].split()):
+            result, data = self.imap_server.fetch(num, '(RFC822)')
+            assert result == 'OK', 'IMAP fetch email failed'
+            
+            raw_email = data[0][1]
+            msg = email.message_from_bytes(raw_email)
+            
+            subject = msg['Subject']
+            
+            if subject != str(self.stack_id): continue
+                    
+            if msg.is_multipart():
+                for part in msg.walk():
+                    if part.get_content_type() == 'text/plain':
+                        body = part.get_payload(decode=True).decode()
+                        break
+            else:
+                body = msg.get_payload(decode=True).decode()
+                
+            return body
+
+        return None
+
+    def close(self):
+        self.imap_server.logout()
 
 
 if __name__ == '__main__':
+    import time
+    
     account = 'ipsync2@outlook.com'
     password = 'thisisawesome2'
     stack_id = 0
     
     estack = EmailStack(account, password, stack_id)
+    estack.push('Hows it going')
+    time.sleep(10)
+    ret = estack.top()
+    print('Stack top:', ret)
+    
+    estack.close()
